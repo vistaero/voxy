@@ -42,9 +42,11 @@ final class Blaze3dSectionMesh implements AutoCloseable {
         int totalQuads = (int) (section.geometryBuffer.size / Long.BYTES);
         int translucentQuads = section.offsets[1] - section.offsets[0];
         int opaqueQuads = totalQuads - translucentQuads;
-        ByteBuffer translucent = allocateVertices(translucentQuads);
-        ByteBuffer opaque = allocateVertices(opaqueQuads);
+        ByteBuffer translucent = null;
+        ByteBuffer opaque = null;
         try {
+            translucent = allocateVertices(translucentQuads);
+            opaque = allocateVertices(opaqueQuads);
             long source = section.geometryBuffer.address;
             long requiredTextureVersion = 0L;
             for (int index = 0; index < translucentQuads; index++) {
@@ -61,7 +63,7 @@ final class Blaze3dSectionMesh implements AutoCloseable {
             if (opaque != null) opaque.flip();
             return new Blaze3dSectionMesh(section.position, opaque, opaqueQuads, translucent, translucentQuads,
                     requiredTextureVersion);
-        } catch (RuntimeException exception) {
+        } catch (RuntimeException | OutOfMemoryError exception) {
             free(opaque);
             free(translucent);
             throw exception;

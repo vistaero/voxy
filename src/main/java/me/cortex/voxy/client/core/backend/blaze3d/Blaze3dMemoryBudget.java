@@ -1,6 +1,8 @@
 package me.cortex.voxy.client.core.backend.blaze3d;
 
 import java.util.Locale;
+import me.cortex.voxy.common.Logger;
+import oshi.SystemInfo;
 
 /**
  * Estimates the expanded-memory cost of the Blaze3D renderer. Cortex's native renderer keeps
@@ -21,6 +23,37 @@ public final class Blaze3dMemoryBudget {
     private static final long FIXED_RAM_BYTES = 256L * MIB;
 
     private Blaze3dMemoryBudget() {
+    }
+
+    /** Total VRAM is a capacity hint, not a measurement of currently free device memory. */
+    public static long detectGeometryLimit(String deviceName) {
+        long limit = 512L * MIB;
+        String active = normalizeDeviceName(deviceName);
+        try {
+            long capacity = Long.MAX_VALUE;
+            for (var card : new SystemInfo().getHardware().getGraphicsCards()) {
+                String name = normalizeDeviceName(card.getName());
+                if (!name.isEmpty() && !active.isEmpty()
+                        && (active.contains(name) || name.contains(active)) && card.getVRam() > 0L) {
+                    capacity = Math.min(capacity, card.getVRam());
+                }
+            }
+            if (capacity != Long.MAX_VALUE) {
+                // Leave half to Minecraft, Sodium, shader packs and the desktop. Our atlas and
+                // render targets consume part of the remaining half before any geometry fits.
+                limit = clamp(capacity / 2L - FIXED_VRAM_BYTES, 64L * MIB, MAX_GEOMETRY_BUDGET);
+            }
+        } catch (RuntimeException | LinkageError exception) {
+            Logger.warn("Unable to determine Blaze3D device capacity; using a 512 MiB geometry limit: "
+                    + exception.getMessage());
+        }
+        Logger.info("Blaze3D geometry safety limit for " + deviceName + ": " + formatBytes(limit)
+                + " (capacity estimate; allocation failures reduce it further).");
+        return limit;
+    }
+
+    private static String normalizeDeviceName(String name) {
+        return name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
     }
 
     public static Estimate estimate(float sectionRenderDistance, float subdivisionSize) {

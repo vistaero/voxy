@@ -27,12 +27,22 @@ public final class WorldEngine {
     public final SectionStorage storage;
     private final Mapper mapper;
     private final ActiveSectionTracker sectionTracker;
-    private ISectionChangeCallback dirtyCallback;
+    private volatile ISectionChangeCallback dirtyCallback;
+    private final java.util.concurrent.CopyOnWriteArrayList<ISectionChangeCallback> changeListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
     private ISectionSaveCallback saveCallback;
     volatile boolean isLive = true;
 
     public void setDirtyCallback(ISectionChangeCallback callback) {
         this.dirtyCallback = callback;
+    }
+
+    public void addChangeListener(ISectionChangeCallback listener) {
+        this.changeListeners.addIfAbsent(listener);
+    }
+
+    public void removeChangeListener(ISectionChangeCallback listener) {
+        this.changeListeners.remove(listener);
     }
 
     public void setSaveCallback(ISectionSaveCallback callback) {
@@ -121,8 +131,12 @@ public final class WorldEngine {
         if (section.tracker != this.sectionTracker) {
             throw new IllegalStateException("Section is not from here");
         }
-        if (this.dirtyCallback != null) {
-            this.dirtyCallback.accept(section, changeState, neighborMsk);
+        ISectionChangeCallback callback = this.dirtyCallback;
+        if (callback != null) {
+            callback.accept(section, changeState, neighborMsk);
+        }
+        for (ISectionChangeCallback listener : this.changeListeners) {
+            listener.accept(section, changeState, neighborMsk);
         }
         if ((changeState&UPDATE_TYPE_DONT_SAVE)==0) {
             section.markDirty();
